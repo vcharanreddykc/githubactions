@@ -42,17 +42,17 @@ jobs:
 
     - name: Gitleaks Installation
       run: |
-       # Get latest Gitleaks release
-       GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+       GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+       | grep '"tag_name":' \
+       | head -n 1 \
+       | sed -E 's/.*"([^"]+)".*/\1/')
+
        echo "Latest Gitleaks version: $GITLEAKS_VERSION"
-
-       # Download Linux AMD64 binary tar.gz
        wget https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz -O gitleaks.tar.gz
-
-       # Extract and move to /usr/local/bin
        tar -xzf gitleaks.tar.gz gitleaks
        chmod +x gitleaks
        sudo mv gitleaks /usr/local/bin/
+
     - name: Gitleaks Code Scan
       run: gitleaks detect source . -r gitleaks-report.json -f json
 
