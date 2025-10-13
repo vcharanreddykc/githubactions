@@ -27,10 +27,16 @@ jobs:
     - uses: actions/checkout@v4
     - name: Trivy Installation
       run: |
+       if ! command -v trivy &> /dev/null
+       then
+       echo "Trivy not found, installing..."
        TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep tag_name | cut -d '"' -f 4)
        wget https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.rpm
-       sudo rpm -ivh trivy_${TRIVY_VERSION#v}_Linux-64bit.rpm || sudo rpm -Uvh trivy_${TRIVY_VERSION#v}_Linux-64bit.rpm
-
+       sudo rpm -Uvh trivy_${TRIVY_VERSION#v}_Linux-64bit.rpm
+       else
+       echo "Trivy is already installed. Skipping installation."
+       trivy --version
+       fi
     - name: Trivy FS Scan
       run: trivy fs --format table -o fs-report.json .
 
