@@ -1,0 +1,72 @@
+name: CI - Build, Scan & Push Image
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC to AWS
+  actions: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/myapp
+
+jobs:
+  ci-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- SonarQube Static Code Analysis ---
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonar.mycompany.com
+
+      # --- Veracode SAST Scan ---
+      - name: Veracode Upload & Scan
+        uses: veracode/veracode-uploadandscan-action@v1
+        with:
+          appname: "myapp"
+          filepath: "./target/app.jar"
+          vid: ${{ secrets.VERACODE_ID }}
+          vkey: ${{ secrets.VERACODE_KEY }}
+          createprofile: true
+          scantimeout: 60
+
+      # --- Configure AWS credentials via OIDC ---
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::<ACCOUNT_ID>:role/github-actions-ecr-pusher
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --- Build Docker Image ---
+      - name: Build Docker Image
+        run: |
+          IMAGE_TAG=sha-$(git rev-parse --short HEAD)
+          docker build -t $ECR_REPO:$IMAGE_TAG .
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      # --- Push to ECR ---
+      - name: Login to ECR
+        run: aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
+
+      - name: Push Image
+        run: docker push $ECR_REPO:${{ env.IMAGE_TAG }}
+
+      # --- Trigger Deployment in Infra Repo ---
+      - name: Trigger Infra Repo CD
+        env:
+          PAT: ${{ secrets.INFRA_TRIGGER_PAT }}
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: token $PAT" \
+            https://api.github.com/repos/<ORG>/<INFRA_REPO>/dispatches \
+            -d '{"event_type":"image-pushed","client_payload":{"image":"'"$ECR_REPO:${IMAGE_TAG}"'"}}'
